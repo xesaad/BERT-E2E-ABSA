@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-TASK_NAME=rest_total
-ABSA_TYPE=tfm
+TASK_NAME=random_samples_lapt14
+ABSA_TYPE=san
 CUDA_VISIBLE_DEVICES=0,2,3 python main.py --model_type bert \
                          --absa_type ${ABSA_TYPE} \
                          --tfm_mode finetune \
                          --fix_tfm 0 \
-                         --model_name_or_path bert-base-uncased \
+                         --model_name_or_path bert-large-uncased \
                          --data_dir ./data/${TASK_NAME} \
                          --task_name ${TASK_NAME} \
                          --per_gpu_train_batch_size 16 \
