@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 SMALL_POSITIVE_CONST = 1e-4
 
+
 class InputExample(object):
     """A single training/test example for simple sequence classification."""
 
@@ -62,7 +63,10 @@ class InputFeatures(object):
 
 class SeqInputFeatures(object):
     """A single set of features of data for the ABSA task"""
-    def __init__(self, input_ids, input_mask, segment_ids, label_ids, evaluate_label_ids):
+
+    def __init__(
+        self, input_ids, input_mask, segment_ids, label_ids, evaluate_label_ids
+    ):
         self.input_ids = input_ids
         self.input_mask = input_mask
         self.segment_ids = segment_ids
@@ -105,24 +109,44 @@ class DataProcessor(object):
 
 class ABSAProcessor(DataProcessor):
     """Processor for the ABSA datasets"""
+
     def get_train_examples(self, data_dir, tagging_schema):
-        return self._create_examples(data_dir=data_dir, set_type='train', tagging_schema=tagging_schema)
+        return self._create_examples(
+            data_dir=data_dir, set_type="train", tagging_schema=tagging_schema
+        )
 
     def get_dev_examples(self, data_dir, tagging_schema):
-        return self._create_examples(data_dir=data_dir, set_type='dev', tagging_schema=tagging_schema)
+        return self._create_examples(
+            data_dir=data_dir, set_type="dev", tagging_schema=tagging_schema
+        )
 
     def get_test_examples(self, data_dir, tagging_schema):
-        return self._create_examples(data_dir=data_dir, set_type='test', tagging_schema=tagging_schema)
+        return self._create_examples(
+            data_dir=data_dir, set_type="test", tagging_schema=tagging_schema
+        )
 
     def get_labels(self, tagging_schema):
-        if tagging_schema == 'OT':
+        if tagging_schema == "OT":
             return []
-        elif tagging_schema == 'BIO':
-            return ['O', 'EQ', 'B-POS', 'I-POS', 'B-NEG', 'I-NEG', 'B-NEU', 'I-NEU']
-        elif tagging_schema == 'BIEOS':
-            return ['O', 'EQ', 'B-POS', 'I-POS', 'E-POS', 'S-POS',
-            'B-NEG', 'I-NEG', 'E-NEG', 'S-NEG',
-            'B-NEU', 'I-NEU', 'E-NEU', 'S-NEU']
+        elif tagging_schema == "BIO":
+            return ["O", "EQ", "B-POS", "I-POS", "B-NEG", "I-NEG", "B-NEU", "I-NEU"]
+        elif tagging_schema == "BIEOS":
+            return [
+                "O",
+                "EQ",
+                "B-POS",
+                "I-POS",
+                "E-POS",
+                "S-POS",
+                "B-NEG",
+                "I-NEG",
+                "E-NEG",
+                "S-NEG",
+                "B-NEU",
+                "I-NEU",
+                "E-NEU",
+                "S-NEU",
+            ]
         else:
             raise Exception("Invalid tagging schema %s..." % tagging_schema)
 
@@ -130,43 +154,45 @@ class ABSAProcessor(DataProcessor):
         examples = []
         file = os.path.join(data_dir, "%s.txt" % set_type)
         class_count = np.zeros(3)
-        with open(file, 'r', encoding='UTF-8') as fp:
+        with open(file, "r", encoding="UTF-8") as fp:
             sample_id = 0
             for line in fp:
-                sent_string, tag_string = line.strip().split('####')
+                sent_string, tag_string = line.strip().split("####")
                 words = []
                 tags = []
-                for tag_item in tag_string.split(' '):
-                    eles = tag_item.split('=')
+                for tag_item in tag_string.split(" "):
+                    eles = tag_item.split("=")
                     if len(eles) == 1:
                         raise Exception("Invalid samples %s..." % tag_string)
                     elif len(eles) == 2:
                         word, tag = eles
                     else:
-                        word = ''.join((len(eles) - 2) * ['='])
+                        word = "".join((len(eles) - 2) * ["="])
                         tag = eles[-1]
                     words.append(word)
                     tags.append(tag)
                 # convert from ot to bieos
-                if tagging_schema == 'BIEOS':
+                if tagging_schema == "BIEOS":
                     tags = ot2bieos_ts(tags)
-                elif tagging_schema == 'BIO':
+                elif tagging_schema == "BIO":
                     tags = ot2bio_ts(tags)
                 else:
                     # original tags follow the OT tagging schema, do nothing
                     pass
                 guid = "%s-%s" % (set_type, sample_id)
-                text_a = ' '.join(words)
-                #label = [absa_label_vocab[tag] for tag in tags]
+                text_a = " ".join(words)
+                # label = [absa_label_vocab[tag] for tag in tags]
                 gold_ts = tag2ts(ts_tag_sequence=tags)
                 for (b, e, s) in gold_ts:
-                    if s == 'POS':
+                    if s == "POS":
                         class_count[0] += 1
-                    if s == 'NEG':
+                    if s == "NEG":
                         class_count[1] += 1
-                    if s == 'NEU':
+                    if s == "NEU":
                         class_count[2] += 1
-                examples.append(InputExample(guid=guid, text_a=text_a, text_b=None, label=tags))
+                examples.append(
+                    InputExample(guid=guid, text_a=text_a, text_b=None, label=tags)
+                )
                 sample_id += 1
         print("%s class count: %s" % (set_type, class_count))
         return examples
@@ -189,11 +215,21 @@ def _truncate_seq_pair(tokens_a, tokens_b, max_length):
             tokens_b.pop()
 
 
-def convert_examples_to_seq_features(examples, label_list, tokenizer,
-                                     cls_token_at_end=False, pad_on_left=False, cls_token='[CLS]',
-                                     sep_token='[SEP]', pad_token=0, sequence_a_segment_id=0,
-                                     sequence_b_segment_id=1, cls_token_segment_id=1, pad_token_segment_id=0,
-                                     mask_padding_with_zero=True):
+def convert_examples_to_seq_features(
+    examples,
+    label_list,
+    tokenizer,
+    cls_token_at_end=False,
+    pad_on_left=False,
+    cls_token="[CLS]",
+    sep_token="[SEP]",
+    pad_token=0,
+    sequence_a_segment_id=0,
+    sequence_b_segment_id=1,
+    cls_token_segment_id=1,
+    pad_token_segment_id=0,
+    mask_padding_with_zero=True,
+):
     # feature extraction for sequence labeling
     label_map = {label: i for i, label in enumerate(label_list)}
     features = []
@@ -203,20 +239,20 @@ def convert_examples_to_seq_features(examples, label_list, tokenizer,
         tokens_a = []
         labels_a = []
         evaluate_label_ids = []
-        words = example.text_a.split(' ')
+        words = example.text_a.split(" ")
         wid, tid = 0, 0
         for word, label in zip(words, example.label):
             subwords = tokenizer.tokenize(word)
             tokens_a.extend(subwords)
-            if label != 'O':
-                labels_a.extend([label] + ['EQ'] * (len(subwords) - 1))
+            if label != "O":
+                labels_a.extend([label] + ["EQ"] * (len(subwords) - 1))
             else:
-                labels_a.extend(['O'] * len(subwords))
+                labels_a.extend(["O"] * len(subwords))
             evaluate_label_ids.append(tid)
             wid += 1
             # move the token pointer
             tid += len(subwords)
-        #print(evaluate_label_ids)
+        # print(evaluate_label_ids)
         assert tid == len(tokens_a)
         evaluate_label_ids = np.array(evaluate_label_ids, dtype=np.int32)
         examples_tokenized.append((tokens_a, labels_a, evaluate_label_ids))
@@ -224,40 +260,44 @@ def convert_examples_to_seq_features(examples, label_list, tokenizer,
             max_seq_length = len(tokens_a)
     # count on the [CLS] and [SEP]
     max_seq_length += 2
-    #max_seq_length = 128
-    for ex_index, (tokens_a, labels_a, evaluate_label_ids) in enumerate(examples_tokenized):
-        #tokens_a = tokenizer.tokenize(example.text_a)
+    # max_seq_length = 128
+    for ex_index, (tokens_a, labels_a, evaluate_label_ids) in enumerate(
+        examples_tokenized
+    ):
+        # tokens_a = tokenizer.tokenize(example.text_a)
 
         # Account for [CLS] and [SEP] with "- 2"
         # for sequence labeling, better not truncate the sequence
-        #if len(tokens_a) > max_seq_length - 2:
+        # if len(tokens_a) > max_seq_length - 2:
         #    tokens_a = tokens_a[:(max_seq_length - 2)]
         #    labels_a = labels_a
         tokens = tokens_a + [sep_token]
         segment_ids = [sequence_a_segment_id] * len(tokens)
-        labels = labels_a + ['O']
+        labels = labels_a + ["O"]
         if cls_token_at_end:
             # evaluate label ids not change
             tokens = tokens + [cls_token]
             segment_ids = segment_ids + [cls_token_segment_id]
-            labels = labels + ['O']
+            labels = labels + ["O"]
         else:
             # right shift 1 for evaluate label ids
             tokens = [cls_token] + tokens
             segment_ids = [cls_token_segment_id] + segment_ids
-            labels = ['O'] + labels
+            labels = ["O"] + labels
             evaluate_label_ids += 1
         input_ids = tokenizer.convert_tokens_to_ids(tokens)
         input_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
         # Zero-pad up to the sequence length.
         padding_length = max_seq_length - len(input_ids)
-        #print("Current labels:", labels)
+        # print("Current labels:", labels)
         label_ids = [label_map[label] for label in labels]
 
         # pad the input sequence and the mask sequence
         if pad_on_left:
             input_ids = ([pad_token] * padding_length) + input_ids
-            input_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + input_mask
+            input_mask = (
+                [0 if mask_padding_with_zero else 1] * padding_length
+            ) + input_mask
             segment_ids = ([pad_token_segment_id] * padding_length) + segment_ids
             # pad sequence tag 'O'
             label_ids = ([0] * padding_length) + label_ids
@@ -266,7 +306,9 @@ def convert_examples_to_seq_features(examples, label_list, tokenizer,
         else:
             # evaluate ids not change
             input_ids = input_ids + ([pad_token] * padding_length)
-            input_mask = input_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
+            input_mask = input_mask + (
+                [0 if mask_padding_with_zero else 1] * padding_length
+            )
             segment_ids = segment_ids + ([pad_token_segment_id] * padding_length)
             # pad sequence tag 'O'
             label_ids = label_ids + ([0] * padding_length)
@@ -278,31 +320,43 @@ def convert_examples_to_seq_features(examples, label_list, tokenizer,
         if ex_index < 5:
             logger.info("*** Example ***")
             logger.info("guid: %s" % (example.guid))
-            logger.info("tokens: %s" % " ".join(
-                    [str(x) for x in tokens]))
+            logger.info("tokens: %s" % " ".join([str(x) for x in tokens]))
             logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
             logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
             logger.info("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
-            logger.info("labels: %s " % ' '.join([str(x) for x in label_ids]))
+            logger.info("labels: %s " % " ".join([str(x) for x in label_ids]))
             logger.info("evaluate label ids: %s" % evaluate_label_ids)
 
         features.append(
-            SeqInputFeatures(input_ids=input_ids,
-                             input_mask=input_mask,
-                             segment_ids=segment_ids,
-                             label_ids=label_ids,
-                             evaluate_label_ids=evaluate_label_ids))
+            SeqInputFeatures(
+                input_ids=input_ids,
+                input_mask=input_mask,
+                segment_ids=segment_ids,
+                label_ids=label_ids,
+                evaluate_label_ids=evaluate_label_ids,
+            )
+        )
     print("maximal sequence length is", max_seq_length)
     return features
 
 
-def convert_examples_to_features(examples, label_list, max_seq_length,
-                                 tokenizer, output_mode,
-                                 cls_token_at_end=False, pad_on_left=False,
-                                 cls_token='[CLS]', sep_token='[SEP]', pad_token=0,
-                                 sequence_a_segment_id=0, sequence_b_segment_id=1,
-                                 cls_token_segment_id=1, pad_token_segment_id=0,
-                                 mask_padding_with_zero=True):
+def convert_examples_to_features(
+    examples,
+    label_list,
+    max_seq_length,
+    tokenizer,
+    output_mode,
+    cls_token_at_end=False,
+    pad_on_left=False,
+    cls_token="[CLS]",
+    sep_token="[SEP]",
+    pad_token=0,
+    sequence_a_segment_id=0,
+    sequence_b_segment_id=1,
+    cls_token_segment_id=1,
+    pad_token_segment_id=0,
+    mask_padding_with_zero=True,
+):
     """ Loads a data file into a list of `InputBatch`s
         `cls_token_at_end` define the location of the CLS token:
             - False (Default, BERT/XLM pattern): [CLS] + A + [SEP] + B + [SEP]
@@ -310,7 +364,7 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
         `cls_token_segment_id` define the segment id associated to the CLS token (0 for BERT, 2 for XLNet)
     """
 
-    label_map = {label : i for i, label in enumerate(label_list)}
+    label_map = {label: i for i, label in enumerate(label_list)}
 
     features = []
     for (ex_index, example) in enumerate(examples):
@@ -329,7 +383,7 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
         else:
             # Account for [CLS] and [SEP] with "- 2"
             if len(tokens_a) > max_seq_length - 2:
-                tokens_a = tokens_a[:(max_seq_length - 2)]
+                tokens_a = tokens_a[: (max_seq_length - 2)]
 
         # The convention in BERT is:
         # (a) For sequence pairs:
@@ -373,11 +427,15 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
         padding_length = max_seq_length - len(input_ids)
         if pad_on_left:
             input_ids = ([pad_token] * padding_length) + input_ids
-            input_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + input_mask
+            input_mask = (
+                [0 if mask_padding_with_zero else 1] * padding_length
+            ) + input_mask
             segment_ids = ([pad_token_segment_id] * padding_length) + segment_ids
         else:
             input_ids = input_ids + ([pad_token] * padding_length)
-            input_mask = input_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
+            input_mask = input_mask + (
+                [0 if mask_padding_with_zero else 1] * padding_length
+            )
             segment_ids = segment_ids + ([pad_token_segment_id] * padding_length)
 
         assert len(input_ids) == max_seq_length
@@ -394,18 +452,20 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
         if ex_index < 5:
             logger.info("*** Example ***")
             logger.info("guid: %s" % (example.guid))
-            logger.info("tokens: %s" % " ".join(
-                    [str(x) for x in tokens]))
+            logger.info("tokens: %s" % " ".join([str(x) for x in tokens]))
             logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
             logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
             logger.info("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
             logger.info("label: %s (id = %d)" % (example.label, label_id))
 
         features.append(
-                InputFeatures(input_ids=input_ids,
-                              input_mask=input_mask,
-                              segment_ids=segment_ids,
-                              label_id=label_id))
+            InputFeatures(
+                input_ids=input_ids,
+                input_mask=input_mask,
+                segment_ids=segment_ids,
+                label_id=label_id,
+            )
+        )
     return features
 
 
@@ -417,10 +477,10 @@ def match_ts(gold_ts_sequence, pred_ts_sequence):
     :return:
     """
     # positive, negative and neutral
-    tag2tagid = {'POS': 0, 'NEG': 1, 'NEU': 2}
+    tag2tagid = {"POS": 0, "NEG": 1, "NEU": 2}
     hit_count, gold_count, pred_count = np.zeros(3), np.zeros(3), np.zeros(3)
     for t in gold_ts_sequence:
-        #print(t)
+        # print(t)
         ts_tag = t[2]
         tid = tag2tagid[ts_tag]
         gold_count[tid] += 1
@@ -434,15 +494,36 @@ def match_ts(gold_ts_sequence, pred_ts_sequence):
 
 
 def compute_metrics_absa(preds, labels, all_evaluate_label_ids, tagging_schema):
-    if tagging_schema == 'BIEOS':
-        absa_label_vocab = {'O': 0, 'EQ': 1, 'B-POS': 2, 'I-POS': 3, 'E-POS': 4, 'S-POS': 5,
-                        'B-NEG': 6, 'I-NEG': 7, 'E-NEG': 8, 'S-NEG': 9,
-                        'B-NEU': 10, 'I-NEU': 11, 'E-NEU': 12, 'S-NEU': 13}
-    elif tagging_schema == 'BIO':
-        absa_label_vocab = {'O': 0, 'EQ': 1, 'B-POS': 2, 'I-POS': 3, 
-        'B-NEG': 4, 'I-NEG': 5, 'B-NEU': 6, 'I-NEU': 7}
-    elif tagging_schema == 'OT':
-        absa_label_vocab = {'O': 0, 'EQ': 1, 'T-POS': 2, 'T-NEG': 3, 'T-NEU': 4}
+    if tagging_schema == "BIEOS":
+        absa_label_vocab = {
+            "O": 0,
+            "EQ": 1,
+            "B-POS": 2,
+            "I-POS": 3,
+            "E-POS": 4,
+            "S-POS": 5,
+            "B-NEG": 6,
+            "I-NEG": 7,
+            "E-NEG": 8,
+            "S-NEG": 9,
+            "B-NEU": 10,
+            "I-NEU": 11,
+            "E-NEU": 12,
+            "S-NEU": 13,
+        }
+    elif tagging_schema == "BIO":
+        absa_label_vocab = {
+            "O": 0,
+            "EQ": 1,
+            "B-POS": 2,
+            "I-POS": 3,
+            "B-NEG": 4,
+            "I-NEG": 5,
+            "B-NEU": 6,
+            "I-NEU": 7,
+        }
+    elif tagging_schema == "OT":
+        absa_label_vocab = {"O": 0, "EQ": 1, "T-POS": 2, "T-NEG": 3, "T-NEU": 4}
     else:
         raise Exception("Invalid tagging schema %s..." % tagging_schema)
     absa_id2tag = {}
@@ -465,28 +546,32 @@ def compute_metrics_absa(preds, labels, all_evaluate_label_ids, tagging_schema):
         pred_tags = [absa_id2tag[label] for label in pred_labels]
         gold_tags = [absa_id2tag[label] for label in gold_labels]
 
-        if tagging_schema == 'OT':
+        if tagging_schema == "OT":
             gold_tags = ot2bieos_ts(gold_tags)
             pred_tags = ot2bieos_ts(pred_tags)
-        elif tagging_schema == 'BIO':
+        elif tagging_schema == "BIO":
             gold_tags = ot2bieos_ts(bio2ot_ts(gold_tags))
             pred_tags = ot2bieos_ts(bio2ot_ts(pred_tags))
         else:
             # current tagging schema is BIEOS, do nothing
             pass
-        g_ts_sequence, p_ts_sequence = tag2ts(ts_tag_sequence=gold_tags), tag2ts(ts_tag_sequence=pred_tags)
+        g_ts_sequence, p_ts_sequence = (
+            tag2ts(ts_tag_sequence=gold_tags),
+            tag2ts(ts_tag_sequence=pred_tags),
+        )
 
-        hit_ts_count, gold_ts_count, pred_ts_count = match_ts(gold_ts_sequence=g_ts_sequence,
-                                                              pred_ts_sequence=p_ts_sequence)
+        hit_ts_count, gold_ts_count, pred_ts_count = match_ts(
+            gold_ts_sequence=g_ts_sequence, pred_ts_sequence=p_ts_sequence
+        )
         n_tp_ts += hit_ts_count
         n_gold_ts += gold_ts_count
         n_pred_ts += pred_ts_count
         for (b, e, s) in g_ts_sequence:
-            if s == 'POS':
+            if s == "POS":
                 class_count[0] += 1
-            if s == 'NEG':
+            if s == "NEG":
                 class_count[1] += 1
-            if s == 'NEU':
+            if s == "NEU":
                 class_count[2] += 1
     for i in range(3):
         n_ts = n_tp_ts[i]
@@ -494,7 +579,12 @@ def compute_metrics_absa(preds, labels, all_evaluate_label_ids, tagging_schema):
         n_p_ts = n_pred_ts[i]
         ts_precision[i] = float(n_ts) / float(n_p_ts + SMALL_POSITIVE_CONST)
         ts_recall[i] = float(n_ts) / float(n_g_ts + SMALL_POSITIVE_CONST)
-        ts_f1[i] = 2 * ts_precision[i] * ts_recall[i] / (ts_precision[i] + ts_recall[i] + SMALL_POSITIVE_CONST)
+        ts_f1[i] = (
+            2
+            * ts_precision[i]
+            * ts_recall[i]
+            / (ts_precision[i] + ts_recall[i] + SMALL_POSITIVE_CONST)
+        )
 
     macro_f1 = ts_f1.mean()
 
@@ -510,7 +600,12 @@ def compute_metrics_absa(preds, labels, all_evaluate_label_ids, tagging_schema):
     micro_p = float(n_tp_total) / (n_p_total + SMALL_POSITIVE_CONST)
     micro_r = float(n_tp_total) / (n_g_total + SMALL_POSITIVE_CONST)
     micro_f1 = 2 * micro_p * micro_r / (micro_p + micro_r + SMALL_POSITIVE_CONST)
-    scores = {'macro-f1': macro_f1, 'precision': micro_p, "recall": micro_r, "micro-f1": micro_f1}
+    scores = {
+        "macro-f1": macro_f1,
+        "precision": micro_p,
+        "recall": micro_r,
+        "micro-f1": micro_f1,
+    }
     return scores
 
 
@@ -521,6 +616,18 @@ processors = {
     "rest14": ABSAProcessor,
     "rest15": ABSAProcessor,
     "rest16": ABSAProcessor,
+    "representative_samples_lapt14": ABSAProcessor,  # added
+    "random_samples_lapt14": ABSAProcessor,  # added
+    "random_sample_mixed_1000": ABSAProcessor,
+    "random_sample_mixed_1500": ABSAProcessor,
+    "random_sample_mixed_2000": ABSAProcessor,
+    "random_sample_mixed_2500": ABSAProcessor,
+    "random_sample_mixed_3000": ABSAProcessor,
+    "random_sample_mixed_3500": ABSAProcessor,
+    "random_sample_mixed_4000": ABSAProcessor,
+    "random_sample_mixed_4500": ABSAProcessor,
+    "random_sample_mixed_5000": ABSAProcessor,
+    "random_sample_mixed_5477": ABSAProcessor,
 }
 
 output_modes = {
@@ -540,4 +647,16 @@ output_modes = {
     "rest15": "classification",
     "rest16": "classification",
     "rest_total_revised": "classification",
+    "representative_samples_lapt14": "classification",
+    "random_samples_lapt14": "classification",
+    "random_sample_mixed_1000": "classification",
+    "random_sample_mixed_1500": "classification",
+    "random_sample_mixed_2000": "classification",
+    "random_sample_mixed_2500": "classification",
+    "random_sample_mixed_3000": "classification",
+    "random_sample_mixed_3500": "classification",
+    "random_sample_mixed_4000": "classification",
+    "random_sample_mixed_4500": "classification",
+    "random_sample_mixed_5000": "classification",
+    "random_sample_mixed_5477": "classification",
 }
