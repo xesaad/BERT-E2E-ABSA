@@ -9,7 +9,7 @@ from torch.nn import CrossEntropyLoss
 class TaggerConfig:
     def __init__(self):
         self.hidden_dropout_prob = 0.1
-        self.hidden_size = 768
+        self.hidden_size = 1024  # used for bert-large-uncased
         self.n_rnn_layers = 1  # not used if tagger is non-RNN model
         self.bidirectional = True  # not used if tagger is non-RNN model
 
@@ -31,7 +31,9 @@ class SAN(nn.Module):
         :param src_key_padding_mask:
         :return:
         """
-        src2, _ = self.self_attn(src, src, src, attn_mask=src_mask, key_padding_mask=src_key_padding_mask)
+        src2, _ = self.self_attn(
+            src, src, src, attn_mask=src_mask, key_padding_mask=src_key_padding_mask
+        )
         src = src + self.dropout(src2)
         # apply layer normalization
         src = self.norm(src)
@@ -54,12 +56,20 @@ class GRU(nn.Module):
         else:
             self.hidden_size = hidden_size
         self.bidirectional = bidirectional
-        self.Wxrz = nn.Linear(in_features=self.input_size, out_features=2*self.hidden_size, bias=True)
-        self.Whrz = nn.Linear(in_features=self.hidden_size, out_features=2*self.hidden_size, bias=True)
-        self.Wxn = nn.Linear(in_features=self.input_size, out_features=self.hidden_size, bias=True)
-        self.Whn = nn.Linear(in_features=self.hidden_size, out_features=self.hidden_size, bias=True)
-        self.LNx1 = nn.LayerNorm(2*self.hidden_size)
-        self.LNh1 = nn.LayerNorm(2*self.hidden_size)
+        self.Wxrz = nn.Linear(
+            in_features=self.input_size, out_features=2 * self.hidden_size, bias=True
+        )
+        self.Whrz = nn.Linear(
+            in_features=self.hidden_size, out_features=2 * self.hidden_size, bias=True
+        )
+        self.Wxn = nn.Linear(
+            in_features=self.input_size, out_features=self.hidden_size, bias=True
+        )
+        self.Whn = nn.Linear(
+            in_features=self.hidden_size, out_features=self.hidden_size, bias=True
+        )
+        self.LNx1 = nn.LayerNorm(2 * self.hidden_size)
+        self.LNh1 = nn.LayerNorm(2 * self.hidden_size)
         self.LNx2 = nn.LayerNorm(self.hidden_size)
         self.LNh2 = nn.LayerNorm(self.hidden_size)
 
@@ -69,6 +79,7 @@ class GRU(nn.Module):
         :param x: input tensor, shape: (batch_size, seq_len, input_size)
         :return:
         """
+
         def recurrence(xt, htm1):
             """
 
@@ -76,10 +87,12 @@ class GRU(nn.Module):
             :param htm1: previous hidden state
             :return:
             """
-            gates_rz = torch.sigmoid(self.LNx1(self.Wxrz(xt)) + self.LNh1(self.Whrz(htm1)))
+            gates_rz = torch.sigmoid(
+                self.LNx1(self.Wxrz(xt)) + self.LNh1(self.Whrz(htm1))
+            )
             rt, zt = gates_rz.chunk(2, 1)
-            nt = torch.tanh(self.LNx2(self.Wxn(xt))+rt*self.LNh2(self.Whn(htm1)))
-            ht = (1.0-zt) * nt + zt * htm1
+            nt = torch.tanh(self.LNx2(self.Wxn(xt)) + rt * self.LNh2(self.Whn(htm1)))
+            ht = (1.0 - zt) * nt + zt * htm1
             return ht
 
         steps = range(x.size(1))
@@ -111,7 +124,7 @@ class GRU(nn.Module):
 
 
 class CRF(nn.Module):
-    # borrow the code from 
+    # borrow the code from
     # https://github.com/allenai/allennlp/blob/master/allennlp/modules/conditional_random_field.py
     def __init__(self, num_tags, constraints=None, include_start_end_transitions=None):
         """
@@ -124,7 +137,7 @@ class CRF(nn.Module):
         self.num_tags = num_tags
         self.include_start_end_transitions = include_start_end_transitions
         self.transitions = nn.Parameter(torch.Tensor(self.num_tags, self.num_tags))
-        constraint_mask = torch.Tensor(self.num_tags+2, self.num_tags+2).fill_(1.)
+        constraint_mask = torch.Tensor(self.num_tags + 2, self.num_tags + 2).fill_(1.0)
         if include_start_end_transitions:
             self.start_transitions = nn.Parameter(torch.Tensor(num_tags))
             self.end_transitions = nn.Parameter(torch.Tensor(num_tags))
@@ -185,7 +198,9 @@ class CRF(nn.Module):
             inner = broadcast_alpha + emit_scores + transition_scores
 
             # mask the padded token when met the padded token, retain the previous alpha
-            alpha = (logsumexp(inner, 1) * mask[t].view(bsz, 1) + alpha * (1 - mask[t]).view(bsz, 1))
+            alpha = logsumexp(inner, 1) * mask[t].view(bsz, 1) + alpha * (
+                1 - mask[t]
+            ).view(bsz, 1)
         # Every sequence needs to end with a transition to the stop_tag.
         if self.include_start_end_transitions:
             stops = alpha + self.end_transitions.view(1, num_tags)
@@ -216,15 +231,15 @@ class CRF(nn.Module):
         else:
             score = 0.0
 
-        for t in range(seq_len-1):
-            current_tag, next_tag = tags[t], tags[t+1]
+        for t in range(seq_len - 1):
+            current_tag, next_tag = tags[t], tags[t + 1]
             # The scores for transitioning from current_tag to next_tag
             transition_score = self.transitions[current_tag.view(-1), next_tag.view(-1)]
 
             # The score for using current_tag
             emit_score = logits[t].gather(1, current_tag.view(bsz, 1)).squeeze(1)
 
-            score = score + transition_score * mask[t+1] + emit_score * mask[t]
+            score = score + transition_score * mask[t + 1] + emit_score * mask[t]
 
         last_tag_index = mask.sum(0).long() - 1
         last_tags = tags.gather(0, last_tag_index.view(1, bsz)).squeeze(0)
@@ -236,7 +251,9 @@ class CRF(nn.Module):
             last_transition_score = 0.0
 
         last_inputs = logits[-1]  # (batch_size, num_tags)
-        last_input_score = last_inputs.gather(1, last_tags.view(-1, 1))  # (batch_size, 1)
+        last_input_score = last_inputs.gather(
+            1, last_tags.view(-1, 1)
+        )  # (batch_size, 1)
         last_input_score = last_input_score.squeeze()  # (batch_size,)
 
         score = score + last_transition_score + last_input_score * mask[-1]
@@ -258,29 +275,37 @@ class CRF(nn.Module):
         # Augment transitions matrix with start and end transitions
         start_tag = num_tags
         end_tag = num_tags + 1
-        transitions = torch.Tensor(num_tags + 2, num_tags + 2).fill_(-10000.)
+        transitions = torch.Tensor(num_tags + 2, num_tags + 2).fill_(-10000.0)
 
         # Apply transition constraints
-        constrained_transitions = (
-                self.transitions * self.constraint_mask[:num_tags, :num_tags] +
-                -10000.0 * (1 - self.constraint_mask[:num_tags, :num_tags])
-        )
+        constrained_transitions = self.transitions * self.constraint_mask[
+            :num_tags, :num_tags
+        ] + -10000.0 * (1 - self.constraint_mask[:num_tags, :num_tags])
 
         transitions[:num_tags, :num_tags] = constrained_transitions.data
 
         if self.include_start_end_transitions:
-            transitions[start_tag, :num_tags] = (
-                    self.start_transitions.detach() * self.constraint_mask[start_tag, :num_tags].data +
-                    -10000.0 * (1 - self.constraint_mask[start_tag, :num_tags].detach())
+            transitions[
+                start_tag, :num_tags
+            ] = self.start_transitions.detach() * self.constraint_mask[
+                start_tag, :num_tags
+            ].data + -10000.0 * (
+                1 - self.constraint_mask[start_tag, :num_tags].detach()
             )
-            transitions[:num_tags, end_tag] = (
-                    self.end_transitions.detach() * self.constraint_mask[:num_tags, end_tag].data +
-                    -10000.0 * (1 - self.constraint_mask[:num_tags, end_tag].detach())
+            transitions[
+                :num_tags, end_tag
+            ] = self.end_transitions.detach() * self.constraint_mask[
+                :num_tags, end_tag
+            ].data + -10000.0 * (
+                1 - self.constraint_mask[:num_tags, end_tag].detach()
             )
         else:
-            transitions[start_tag, :num_tags] = (-10000.0 *
-                                                 (1 - self.constraint_mask[start_tag, :num_tags].detach()))
-            transitions[:num_tags, end_tag] = -10000.0 * (1 - self.constraint_mask[:num_tags, end_tag].detach())
+            transitions[start_tag, :num_tags] = -10000.0 * (
+                1 - self.constraint_mask[start_tag, :num_tags].detach()
+            )
+            transitions[:num_tags, end_tag] = -10000.0 * (
+                1 - self.constraint_mask[:num_tags, end_tag].detach()
+            )
 
         best_paths = []
         # Pad the max sequence length by 2 to account for start_tag + end_tag.
@@ -290,14 +315,14 @@ class CRF(nn.Module):
             # perform viterbi decoding sample by sample
             seq_len = torch.sum(prediction_mask)
             # Start with everything totally unlikely
-            tag_sequence.fill_(-10000.)
+            tag_sequence.fill_(-10000.0)
             # At timestep 0 we must have the START_TAG
-            tag_sequence[0, start_tag] = 0.
+            tag_sequence[0, start_tag] = 0.0
             # At steps 1, ..., sequence_length we just use the incoming prediction
-            tag_sequence[1:(seq_len + 1), :num_tags] = prediction[:seq_len]
+            tag_sequence[1 : (seq_len + 1), :num_tags] = prediction[:seq_len]
             # And at the last timestep we must have the END_TAG
-            tag_sequence[seq_len + 1, end_tag] = 0.
-            viterbi_path = viterbi_decode(tag_sequence[:(seq_len + 2)], transitions)
+            tag_sequence[seq_len + 1, end_tag] = 0.0
+            viterbi_path = viterbi_decode(tag_sequence[: (seq_len + 2)], transitions)
             viterbi_path = viterbi_path[1:-1]
             best_paths.append(viterbi_path)
         return best_paths
@@ -319,11 +344,15 @@ class LSTM(nn.Module):
         else:
             self.hidden_size = hidden_size
         self.bidirectional = bidirectional
-        self.LNx = nn.LayerNorm(4*self.hidden_size)
-        self.LNh = nn.LayerNorm(4*self.hidden_size)
+        self.LNx = nn.LayerNorm(4 * self.hidden_size)
+        self.LNh = nn.LayerNorm(4 * self.hidden_size)
         self.LNc = nn.LayerNorm(self.hidden_size)
-        self.Wx = nn.Linear(in_features=self.input_size, out_features=4*self.hidden_size, bias=True)
-        self.Wh = nn.Linear(in_features=self.hidden_size, out_features=4*self.hidden_size, bias=True)
+        self.Wx = nn.Linear(
+            in_features=self.input_size, out_features=4 * self.hidden_size, bias=True
+        )
+        self.Wh = nn.Linear(
+            in_features=self.hidden_size, out_features=4 * self.hidden_size, bias=True
+        )
 
     def forward(self, x):
         """
@@ -331,6 +360,7 @@ class LSTM(nn.Module):
         :param x: input, shape: (batch_size, seq_len, input_size)
         :return:
         """
+
         def recurrence(xt, hidden):
             """
             recurrence function enhanced with layer norm
@@ -349,6 +379,7 @@ class LSTM(nn.Module):
             ht = ot * torch.tanh(self.LNc(ct))  # n_b x hidden_dim
 
             return ht, ct
+
         output = []
         # sequence_length
         steps = range(x.size(1))
@@ -388,7 +419,7 @@ class BertABSATagger(BertPreTrainedModel):
         self.num_labels = bert_config.num_labels
         self.tagger_config = TaggerConfig()
         self.tagger_config.absa_type = bert_config.absa_type.lower()
-        if bert_config.tfm_mode == 'finetune':
+        if bert_config.tfm_mode == "finetune":
             # initialized with pre-trained BERT and perform finetuning
             # print("Fine-tuning the pre-trained BERT...")
             self.bert = BertModel(bert_config)
@@ -402,67 +433,98 @@ class BertABSATagger(BertPreTrainedModel):
                 p.requires_grad = False
 
         self.tagger = None
-        if self.tagger_config.absa_type == 'linear':
+        if self.tagger_config.absa_type == "linear":
             # hidden size at the penultimate layer
             penultimate_hidden_size = bert_config.hidden_size
         else:
             self.tagger_dropout = nn.Dropout(self.tagger_config.hidden_dropout_prob)
-            if self.tagger_config.absa_type == 'lstm':
-                self.tagger = LSTM(input_size=bert_config.hidden_size,
-                                   hidden_size=self.tagger_config.hidden_size,
-                                   bidirectional=self.tagger_config.bidirectional)
-            elif self.tagger_config.absa_type == 'gru':
-                self.tagger = GRU(input_size=bert_config.hidden_size,
-                                  hidden_size=self.tagger_config.hidden_size,
-                                  bidirectional=self.tagger_config.bidirectional)
-            elif self.tagger_config.absa_type == 'tfm':
+            if self.tagger_config.absa_type == "lstm":
+                self.tagger = LSTM(
+                    input_size=bert_config.hidden_size,
+                    hidden_size=self.tagger_config.hidden_size,
+                    bidirectional=self.tagger_config.bidirectional,
+                )
+            elif self.tagger_config.absa_type == "gru":
+                self.tagger = GRU(
+                    input_size=bert_config.hidden_size,
+                    hidden_size=self.tagger_config.hidden_size,
+                    bidirectional=self.tagger_config.bidirectional,
+                )
+            elif self.tagger_config.absa_type == "tfm":
                 # transformer encoder layer
-                self.tagger = nn.TransformerEncoderLayer(d_model=bert_config.hidden_size,
-                                                         nhead=12,
-                                                         dim_feedforward=4*bert_config.hidden_size,
-                                                         dropout=0.1)
-            elif self.tagger_config.absa_type == 'san':
+                self.tagger = nn.TransformerEncoderLayer(
+                    d_model=bert_config.hidden_size,
+                    nhead=bert_config.num_attention_heads,
+                    dim_feedforward=4 * bert_config.hidden_size,
+                    dropout=0.1,
+                )
+            elif self.tagger_config.absa_type == "san":
                 # vanilla self attention networks
-                self.tagger = SAN(d_model=bert_config.hidden_size, nhead=12, dropout=0.1)
-            elif self.tagger_config.absa_type == 'crf':
+                self.tagger = SAN(
+                    d_model=bert_config.hidden_size,
+                    nhead=bert_config.num_attention_heads,
+                    dropout=0.1,
+                )
+            elif self.tagger_config.absa_type == "crf":
                 self.tagger = CRF(num_tags=self.num_labels)
             else:
-                raise Exception('Unimplemented downstream tagger %s...' % self.tagger_config.absa_type)
+                raise Exception(
+                    "Unimplemented downstream tagger %s..."
+                    % self.tagger_config.absa_type
+                )
             penultimate_hidden_size = self.tagger_config.hidden_size
         self.classifier = nn.Linear(penultimate_hidden_size, bert_config.num_labels)
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None,
-                position_ids=None, head_mask=None):
-        outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
-                            attention_mask=attention_mask, head_mask=head_mask)
+    def forward(
+        self,
+        input_ids,
+        token_type_ids=None,
+        attention_mask=None,
+        labels=None,
+        position_ids=None,
+        head_mask=None,
+    ):
+        outputs = self.bert(
+            input_ids,
+            position_ids=position_ids,
+            token_type_ids=token_type_ids,
+            attention_mask=attention_mask,
+            head_mask=head_mask,
+        )
         # the hidden states of the last Bert Layer, shape: (bsz, seq_len, hsz)
         tagger_input = outputs[0]
         tagger_input = self.bert_dropout(tagger_input)
-        #print("tagger_input.shape:", tagger_input.shape)
-        if self.tagger is None or self.tagger_config.absa_type == 'crf':
+        # print("tagger_input.shape:", tagger_input.shape)
+        if self.tagger is None or self.tagger_config.absa_type == "crf":
             # regard classifier as the tagger
             logits = self.classifier(tagger_input)
         else:
-            if self.tagger_config.absa_type == 'lstm':
+            if self.tagger_config.absa_type == "lstm":
                 # customized LSTM
                 classifier_input, _ = self.tagger(tagger_input)
-            elif self.tagger_config.absa_type == 'gru':
+            elif self.tagger_config.absa_type == "gru":
                 # customized GRU
                 classifier_input, _ = self.tagger(tagger_input)
-            elif self.tagger_config.absa_type == 'san' or self.tagger_config.absa_type == 'tfm':
+            elif (
+                self.tagger_config.absa_type == "san"
+                or self.tagger_config.absa_type == "tfm"
+            ):
                 # vanilla self-attention networks or transformer
                 # adapt the input format for the transformer or self attention networks
                 tagger_input = tagger_input.transpose(0, 1)
                 classifier_input = self.tagger(tagger_input)
                 classifier_input = classifier_input.transpose(0, 1)
             else:
-                raise Exception("Unimplemented downstream tagger %s..." % self.tagger_config.absa_type)
+                raise Exception(
+                    "Unimplemented downstream tagger %s..."
+                    % self.tagger_config.absa_type
+                )
             classifier_input = self.tagger_dropout(classifier_input)
             logits = self.classifier(classifier_input)
         outputs = (logits,) + outputs[2:]
 
         if labels is not None:
-            if self.tagger_config.absa_type != 'crf':
+            if self.tagger_config.absa_type != "crf":
                 loss_fct = CrossEntropyLoss()
                 if attention_mask is not None:
                     active_loss = attention_mask.view(-1) == 1
@@ -473,7 +535,9 @@ class BertABSATagger(BertPreTrainedModel):
                     loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
                 outputs = (loss,) + outputs
             else:
-                log_likelihood = self.tagger(inputs=logits, tags=labels, mask=attention_mask)
+                log_likelihood = self.tagger(
+                    inputs=logits, tags=labels, mask=attention_mask
+                )
                 loss = -log_likelihood
                 outputs = (loss,) + outputs
         return outputs
@@ -487,28 +551,44 @@ class XLNetABSATagger(XLNetPreTrainedModel):
         self.xlnet = XLNetModel(xlnet_config)
         self.tagger_config = xlnet_config.absa_tagger_config
         self.tagger = None
-        if self.tagger_config.tagger == '':
+        if self.tagger_config.tagger == "":
             # hidden size at the penultimate layer
             penultimate_hidden_size = xlnet_config.d_model
         else:
             self.tagger_dropout = nn.Dropout(self.tagger_config.hidden_dropout_prob)
-            if self.tagger_config.tagger in ['RNN', 'LSTM', 'GRU']:
+            if self.tagger_config.tagger in ["RNN", "LSTM", "GRU"]:
                 # 2-layer bi-directional rnn decoder
                 self.tagger = getattr(nn, self.tagger_config.tagger)(
-                    input_size=xlnet_config.d_model, hidden_size=self.tagger_config.hidden_size//2,
-                    num_layers=self.tagger_config.n_rnn_layers, batch_first=True, bidirectional=True)
-            elif self.tagger_config.tagger in ['CRF']:
+                    input_size=xlnet_config.d_model,
+                    hidden_size=self.tagger_config.hidden_size // 2,
+                    num_layers=self.tagger_config.n_rnn_layers,
+                    batch_first=True,
+                    bidirectional=True,
+                )
+            elif self.tagger_config.tagger in ["CRF"]:
                 # crf tagger
                 raise Exception("Unimplemented now!!")
             else:
-                raise Exception('Unimplemented tagger %s...' % self.tagger_config.tagger)
+                raise Exception(
+                    "Unimplemented tagger %s..." % self.tagger_config.tagger
+                )
             penultimate_hidden_size = self.tagger_config.hidden_size
         self.tagger_dropout = nn.Dropout(self.tagger_config.hidden_dropout_prob)
         self.classifier = nn.Linear(penultimate_hidden_size, xlnet_config.num_labels)
         self.apply(self.init_weights)
 
-    def forward(self, input_ids, token_type_ids=None, input_mask=None, attention_mask=None, mems=None,
-                perm_mask=None, target_mapping=None, labels=None, head_mask=None):
+    def forward(
+        self,
+        input_ids,
+        token_type_ids=None,
+        input_mask=None,
+        attention_mask=None,
+        mems=None,
+        perm_mask=None,
+        target_mapping=None,
+        labels=None,
+        head_mask=None,
+    ):
         """
 
         :param input_ids: Indices of input sequence tokens in the vocabulary
@@ -524,10 +604,16 @@ class XLNetABSATagger(XLNetPreTrainedModel):
         :param head_mask:
         :return:
         """
-        transformer_outputs = self.xlnet(input_ids, token_type_ids=token_type_ids,
-                                               input_mask=input_mask, attention_mask=attention_mask,
-                                               mems=mems, perm_mask=perm_mask, target_mapping=target_mapping,
-                                               head_mask=head_mask)
+        transformer_outputs = self.xlnet(
+            input_ids,
+            token_type_ids=token_type_ids,
+            input_mask=input_mask,
+            attention_mask=attention_mask,
+            mems=mems,
+            perm_mask=perm_mask,
+            target_mapping=target_mapping,
+            head_mask=head_mask,
+        )
         # hidden states from the last transformer layer, xlnet has done the dropout,
         # no need to do the additional dropout
         tagger_input = transformer_outputs[0]
@@ -536,10 +622,12 @@ class XLNetABSATagger(XLNetPreTrainedModel):
             # regard classifier as the tagger
             logits = self.classifier(tagger_input)
         else:
-            if self.tagger_config.tagger in ['RNN', 'LSTM', 'GRU']:
-                classifier_input, _= self.tagger(tagger_input)
+            if self.tagger_config.tagger in ["RNN", "LSTM", "GRU"]:
+                classifier_input, _ = self.tagger(tagger_input)
             else:
-                raise Exception("Unimplemented tagger %s..." % self.tagger_config.tagger)
+                raise Exception(
+                    "Unimplemented tagger %s..." % self.tagger_config.tagger
+                )
             classifier_input = self.tagger_dropout(classifier_input)
             logits = self.classifier(classifier_input)
         # transformer outputs: (last_hidden_state, mems, hidden_states, attentions)
